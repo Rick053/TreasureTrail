@@ -5,6 +5,10 @@ import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.widget.TextView;
+
+import tech.cocoon.Inbox.Inbox;
+import tech.cocoon.Monitor.Status;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -16,6 +20,10 @@ public class MainActivity extends AppCompatActivity {
 
         App.setActivity(this);
         App.startService(MainActivity.this);
+
+        TextView status = (TextView) App.getActivity().findViewById(R.id.status);
+        Status.assignView(status);
+
     }
 
 
