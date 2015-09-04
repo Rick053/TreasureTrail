@@ -2,6 +2,7 @@ package com.utsdev.treasuretrail;
 
 import android.app.NotificationManager;
 import android.content.Context;
+import android.location.Location;
 import android.os.Handler;
 import android.os.Vibrator;
 import android.os.Bundle;
@@ -10,10 +11,13 @@ import android.support.v4.app.NotificationCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
+import android.util.Base64;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 
 import com.utsdev.treasuretrail.adapters.HintAdapter;
+import com.utsdev.treasuretrail.fields.CurrentLocation;
 import com.utsdev.treasuretrail.fields.Hint;
 import com.utsdev.treasuretrail.fields.User;
 import com.utsdev.treasuretrail.stuff.DividerItemDecoration;
@@ -26,10 +30,12 @@ import java.util.List;
 
 import tech.cocoon.Constants.Types;
 import tech.cocoon.Inbox.BeaconInbox;
+import tech.cocoon.Inbox.Inbox;
 import tech.cocoon.Message.Beacon;
 import tech.cocoon.Constants.Types.ServiceType;
 import tech.cocoon.Message.Field;
 import tech.cocoon.Message.Format.BeaconFormat;
+import tech.cocoon.Sensor.Location.LocationSensorData;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -40,7 +46,8 @@ public class MainActivity extends AppCompatActivity {
     //Fields
     public Hint hintField;
     private User userField;
-    private int id = 2;
+    private int id = 1;
+    private CurrentLocation locationField;
 
     //Notification Types
     @Retention(RetentionPolicy.SOURCE)
@@ -50,9 +57,10 @@ public class MainActivity extends AppCompatActivity {
     public static final int NEW_HINT = 1;
 
     public BeaconFormat bf;
+    public BeaconFormat lf;
 
     //test stuff
-    public int count = 1;
+    public int count = 2;
 
     public String myHint;
 
@@ -89,7 +97,7 @@ public class MainActivity extends AppCompatActivity {
         rcv.setAdapter(adapter);
         rcv.addItemDecoration(new DividerItemDecoration(this, DividerItemDecoration.VERTICAL_LIST));
 
-        adapter.addHint(hints[1]);
+        adapter.addHint(hints[2]);
 
         //Initialize the handler which checks the messages every x seconds
         final Handler handler = new Handler();
@@ -102,39 +110,77 @@ public class MainActivity extends AppCompatActivity {
                 BeaconInbox inbox = App.getBeaconInbox();
                 List<Beacon> msgs = inbox.getList();
 
+
+                Location location = new LocationSensorData().getLocation();
+
+                lf.setFieldValue(locationField, createValueFromLocation(location));
+                Beacon myBeacon = new Beacon(lf, ServiceType.SENSOR_GPS);
+
+                App.getBeaconInbox().pushElement(myBeacon);
+                Log.v("LOCATION LOG STUFF", location.toString());
+
                 if(msgs.size() > 0) {
-                    Beacon msg = inbox.popElement();
+                    for(int j = 0; j < msgs.size(); j++) {
+                        Beacon msg = msgs.get(j);
 
-                    if(msg.serviceType == ServiceType.GENERIC_MESSAGE) {
-                        //Hint is sent
-                        String h = msg.getFieldValue(hintField);
-                        String i = msg.getFieldValue(userField);
-                        int user_id = Integer.parseInt(i.replace("|", ""));
+                        if(msg.serviceType == ServiceType.GENERIC_MESSAGE) {
+                            //Hint is sent
+                            String h = msg.getFieldValue(hintField);
+                            String i = msg.getFieldValue(userField);
+                            int user_id = Integer.parseInt(i.replace("|", ""));
 
-                        if(user_id != id) {
                             adapter.addHint(h.replace("|", ""));
 
                             sendNotification(NEW_HINT);
+
+                        } else if (msg.serviceType == ServiceType.SENSOR_GPS) {
+                            //TODO Location is sent
+                            String l = msg.getFieldValue(locationField);
+                            byte[] lbytes = Base64.decode(l, Base64.DEFAULT);
+                            String loc = new String(lbytes);
+
+                            String[] locs = loc.split("x");
+                            double lon = Double.parseDouble((location.getLongitude() + "").split(",")[0] + "," + locs[0]);
+                            double lat = Double.parseDouble((location.getLatitude() + "").split(",")[1] + "," + locs[1]);
+
+                            Location target = new Location(location);
+                            target.setLongitude(lon);
+                            target.setLatitude(lat);
+
+                            float dist = location.distanceTo(target);
+
+                            if(dist < 5) {
+                                v.vibrate(500);
+
+                                App.getBeaconInbox().pushElement(new Beacon(bf, ServiceType.GENERIC_MESSAGE));
+                            }
                         }
-                    } else if (msg.serviceType == ServiceType.SENSOR_GPS) {
-                        //TODO Location is sent
                     }
                 }
-
-                Beacon myBeacon = new Beacon(bf, Types.ServiceType.GENERIC_MESSAGE);
-
-                App.getBeaconInbox().pushElement(myBeacon);
 
                 handler.postDelayed(this, delay);
             }
         }, delay);
     }
 
+    private String createValueFromLocation(Location location) {
+        String lon = location.getLongitude() + "";
+        String lat = location.getLatitude() + "";
+
+        String lonPart = lon.split(",")[1];
+        String latPart = lat.split(",")[1];
+
+        String test = lonPart + "x" + latPart;
+
+        return Base64.encodeToString(test.getBytes(), Base64.DEFAULT);
+    }
+
     private void setupBeaconFormat() {
 
         hintField = new Hint(23);
         userField = new User(1);
-        myHint = hints[1];
+        locationField = new CurrentLocation(23);
+        myHint = hints[2];
 
 
         bf = new BeaconFormat.Builder(Types.BeaconType.SSID)
@@ -142,6 +188,10 @@ public class MainActivity extends AppCompatActivity {
                 .addField(userField).build();
         bf.setFieldValue(hintField, myHint);
         bf.setFieldValue(userField, id + "");
+
+        lf = new BeaconFormat.Builder(Types.BeaconType.SSID)
+                .addField(locationField)
+                .addField(userField).build();
     }
 
     private void sendNotification(int type) {
