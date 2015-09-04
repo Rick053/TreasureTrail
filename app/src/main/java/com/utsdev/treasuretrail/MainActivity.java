@@ -46,8 +46,11 @@ public class MainActivity extends AppCompatActivity {
     //Fields
     public Hint hintField;
     private User userField;
-    private int id = 1;
+    private int id = 2;
     private CurrentLocation locationField;
+    public Location location;
+
+    public GPSTracker tracker;
 
     //Notification Types
     @Retention(RetentionPolicy.SOURCE)
@@ -77,6 +80,8 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+
+        tracker = new GPSTracker(this);
 
         App.setActivity(this);
         App.startService(MainActivity.this);
@@ -110,49 +115,58 @@ public class MainActivity extends AppCompatActivity {
                 BeaconInbox inbox = App.getBeaconInbox();
                 List<Beacon> msgs = inbox.getList();
 
+                location = null;
 
-                Location location = new LocationSensorData().getLocation();
+                if(tracker.canGetLocation()) {
+                    location = tracker.getLocation();
+                }
 
-                lf.setFieldValue(locationField, createValueFromLocation(location));
-                Beacon myBeacon = new Beacon(lf, ServiceType.SENSOR_GPS);
+                if(location != null) {
+                    lf.setFieldValue(locationField, createValueFromLocation(location));
+                    Beacon myBeacon = new Beacon(lf, ServiceType.GENERIC_RESPONSE);
 
-                App.getBeaconInbox().pushElement(myBeacon);
-                Log.v("LOCATION LOG STUFF", location.toString());
+                    App.getBeaconInbox().pushElement(myBeacon);
+                    Log.v("LOCATION LOG STUFF", location.toString());
+                }
 
                 if(msgs.size() > 0) {
                     for(int j = 0; j < msgs.size(); j++) {
                         Beacon msg = msgs.get(j);
 
-                        if(msg.serviceType == ServiceType.GENERIC_MESSAGE) {
-                            //Hint is sent
-                            String h = msg.getFieldValue(hintField);
-                            String i = msg.getFieldValue(userField);
-                            int user_id = Integer.parseInt(i.replace("|", ""));
+                        int user_id = Integer.parseInt(msg.getFieldValue(userField).replace("|", ""));
 
-                            adapter.addHint(h.replace("|", ""));
+                        if(user_id != id) {
+                            if(msg.serviceType == ServiceType.GENERIC_MESSAGE) {
+                                //Hint is sent
+                                String h = msg.getFieldValue(hintField);
+                                String i = msg.getFieldValue(userField);
 
-                            sendNotification(NEW_HINT);
+                                adapter.addHint(h.replace("|", ""));
 
-                        } else if (msg.serviceType == ServiceType.SENSOR_GPS) {
-                            //TODO Location is sent
-                            String l = msg.getFieldValue(locationField);
-                            byte[] lbytes = Base64.decode(l, Base64.DEFAULT);
-                            String loc = new String(lbytes);
+                                sendNotification(NEW_HINT);
 
-                            String[] locs = loc.split("x");
-                            double lon = Double.parseDouble((location.getLongitude() + "").split(",")[0] + "," + locs[0]);
-                            double lat = Double.parseDouble((location.getLatitude() + "").split(",")[1] + "," + locs[1]);
+                            } else if (msg.serviceType == ServiceType.GENERIC_RESPONSE) {
+                                //TODO Location is sent
+                                if(location != null) {
+                                    String l = msg.getFieldValue(locationField);
+                                    l.replace("|", "");
 
-                            Location target = new Location(location);
-                            target.setLongitude(lon);
-                            target.setLatitude(lat);
+                                    String[] locs = l.split("x");
+                                    double lon = Double.parseDouble((location.getLongitude() + "").split("\\.")[0] + "." + locs[0].replace("|", ""));
+                                    double lat = Double.parseDouble((location.getLatitude() + "").split("\\.")[0] + "." + locs[1].replace("|", ""));
 
-                            float dist = location.distanceTo(target);
+                                    Location target = new Location(location);
+                                    target.setLongitude(lon);
+                                    target.setLatitude(lat);
 
-                            if(dist < 5) {
-                                v.vibrate(500);
+                                    float dist = location.distanceTo(target);
 
-                                App.getBeaconInbox().pushElement(new Beacon(bf, ServiceType.GENERIC_MESSAGE));
+                                    if(dist < 5) {
+                                        v.vibrate(500);
+
+                                        App.getBeaconInbox().pushElement(new Beacon(bf, ServiceType.GENERIC_MESSAGE));
+                                    }
+                                }
                             }
                         }
                     }
@@ -167,19 +181,34 @@ public class MainActivity extends AppCompatActivity {
         String lon = location.getLongitude() + "";
         String lat = location.getLatitude() + "";
 
-        String lonPart = lon.split(",")[1];
-        String latPart = lat.split(",")[1];
+        Log.v("Location thingy", "LONG - "  + lon + " -- LAT - " + lat);
+
+        String lonPart;
+
+        if(lon.contains(".")) {
+            lonPart = lon.split("\\.")[1];
+        } else {
+            lonPart = "0";
+        }
+
+        String latPart;
+
+        if(lat.contains(".")) {
+            latPart = lat.split("\\.")[1];
+        } else {
+            latPart = "0";
+        }
 
         String test = lonPart + "x" + latPart;
 
-        return Base64.encodeToString(test.getBytes(), Base64.DEFAULT);
+        return test;
     }
 
     private void setupBeaconFormat() {
 
         hintField = new Hint(23);
         userField = new User(1);
-        locationField = new CurrentLocation(23);
+        locationField = new CurrentLocation(17);
         myHint = hints[2];
 
 
